@@ -543,9 +543,9 @@
   const order = ['shell','aero','wheels','engine','motor','battery','pcu','transmission','fuel','brakes','arrows','labels'];
 
   const state = {
-    rotY:-0.75, rotX:-0.26, zoom:84, explode:0,
+    rotY:-0.75, rotX:-0.20, zoom:84, explode:0,
     orbit:true, flow:true, cog:false, selected:'overview',
-    mode:'solid', dragging:false, lastX:0, lastY:0, moved:0
+    mode:'solid', dragging:false, lastX:0, lastY:0, moved:0, reflect:false
   };
 
   // ---------- telemetry ----------
@@ -610,6 +610,7 @@
     q=add(q,t);
     const e=state.explode/100;
     if(e && explodeMap[id]) q=add(q,scl(explodeMap[id],e));
+    if(state.reflect) q={x:q.x, y:-q.y, z:q.z};   // mirror about ground plane
     q=rY(q,state.rotY); q=rX(q,state.rotX);
     return q;
   }
@@ -691,10 +692,12 @@
   function rgbStr(c){return `rgb(${clamp255(c.r)},${clamp255(c.g)},${clamp255(c.b)})`;}
   function lerp(a,b,t){return a+(b-a)*t;}
   function smooth(t){t=t<0?0:t>1?1:t;return t*t*(3-2*t);}
+  const FILLDIR = normalize({x:-0.55,y:0.30,z:0.55});
   function shadeFace(f){
     const n=f.normal; const nC = n.z>0 ? {x:-n.x,y:-n.y,z:-n.z} : n;  // camera-facing
     const base=hexRGB(f.color), mat=f.mat||'paint';
     const diff=Math.max(0,dot(nC,lightDir));
+    const fillD=Math.max(0,dot(nC,FILLDIR));
     // reflection gradient by world height (robust to winding): low=ground, high=sky
     let fy=0,cnt=0; for(const p of f.verts){fy+=p.y;cnt++;} fy/=cnt;
     const t=smooth((fy-0.05)/1.5);
@@ -702,19 +705,20 @@
     const half=normalize(add(lightDir,TOCAM));
     const sdot=Math.max(0,dot(nC,half));
     const fres=Math.pow(1-Math.max(0,dot(nC,TOCAM)),3);
-    let amb=0.20, dif=0.7, refl=0.26, spec=Math.pow(sdot,32)*0.8;
-    if(mat==='glass'){ amb=0.14;dif=0.22;refl=0.55+0.3*fres;spec=Math.pow(sdot,70)*1.0; }
-    else if(mat==='chrome'){ amb=0.25;dif=0.4;refl=0.80;spec=Math.pow(sdot,46)*1.1; }
+    let amb=0.20, dif=0.66, refl=0.26, spec=Math.pow(sdot,90)*0.9+Math.pow(sdot,22)*0.22;
+    if(mat==='glass'){ amb=0.13;dif=0.20;refl=0.55+0.32*fres;spec=Math.pow(sdot,80)*1.1; }
+    else if(mat==='chrome'){ amb=0.24;dif=0.42;refl=0.80;spec=Math.pow(sdot,46)*1.1; }
     else if(mat==='tire'){ amb=0.30;dif=0.55;refl=0.04;spec=Math.pow(sdot,8)*0.10; }
     else if(mat==='grille'){ amb=0.22;dif=0.40;refl=0.06;spec=Math.pow(sdot,12)*0.15; }
     else if(mat==='light'){ return rgbStr(base); }                       // emissive
-    else if(mat==='tail'){ const g=0.55+0.45*diff; return rgbStr({r:base.r*g+40,g:base.g*g,b:base.b*g}); }
-    else if(mat==='matte'){ const m=0.5+diff*0.7; return rgbStr({r:base.r*m,g:base.g*m,b:base.b*m}); }
-    const lit=amb+dif*diff;
+    else if(mat==='tail'){ const g=0.55+0.45*diff; return rgbStr({r:base.r*g+45,g:base.g*g,b:base.b*g}); }
+    else if(mat==='matte'){ const m=0.45+diff*0.7+fillD*0.18; return rgbStr({r:base.r*m,g:base.g*m,b:base.b*m}); }
+    const lit=amb+dif*diff+0.20*fillD;
+    const rim=fres*0.30;
     return rgbStr({
-      r:base.r*lit*(1-refl)+env.r*refl+255*spec,
-      g:base.g*lit*(1-refl)+env.g*refl+255*spec,
-      b:base.b*lit*(1-refl)+env.b*refl+255*spec
+      r:base.r*lit*(1-refl)+env.r*refl+ENV_SKY.r*rim+255*spec,
+      g:base.g*lit*(1-refl)+env.g*refl+ENV_SKY.g*rim+255*spec,
+      b:base.b*lit*(1-refl)+env.b*refl+ENV_SKY.b*rim+255*spec
     });
   }
   function tag(faces,mat){faces.forEach(f=>f.mat=mat);return faces;}
@@ -728,7 +732,7 @@
     return v(sec.x, yy, sec.hw*wf*Math.cos(theta));
   }
   function buildBody(sections,faces){
-    const M=22;
+    const M=32;
     for(let i=0;i<sections.length-1;i++){
       const A=sections[i],B=sections[i+1];
       for(let k=0;k<M;k++){
@@ -752,32 +756,44 @@
   function buildExterior(){
     const faces=[];
     const sec=[
-      {x:-4.30,hw:.34,yb:.18,yt:.42,topW:1},
-      {x:-3.95,hw:.74,yb:.12,yt:.56,topW:1},
-      {x:-3.30,hw:.94,yb:.07,yt:.72,topW:1},
-      {x:-2.90,hw:1.07,yb:.06,yt:.82,topW:1},
-      {x:-2.20,hw:1.02,yb:.05,yt:.95,topW:.95},
-      {x:-1.45,hw:.99,yb:.05,yt:1.20,topW:.60},
-      {x:-0.50,hw:.99,yb:.05,yt:1.42,topW:.52},
-      {x: 0.45,hw:1.00,yb:.05,yt:1.43,topW:.52},
-      {x: 1.25,hw:1.02,yb:.05,yt:1.30,topW:.58},
-      {x: 2.05,hw:1.07,yb:.05,yt:1.02,topW:.82},
-      {x: 2.95,hw:1.11,yb:.06,yt:.86,topW:1},
-      {x: 3.60,hw:1.00,yb:.10,yt:.74,topW:1},
-      {x: 4.10,hw:.72,yb:.16,yt:.56,topW:1},
-      {x: 4.22,hw:.44,yb:.22,yt:.48,topW:1}
+      {x:-4.30,hw:.32,yb:.20,yt:.40,topW:1},
+      {x:-4.05,hw:.58,yb:.15,yt:.50,topW:1},
+      {x:-3.70,hw:.82,yb:.10,yt:.62,topW:1},
+      {x:-3.25,hw:.97,yb:.07,yt:.73,topW:1},
+      {x:-2.90,hw:1.08,yb:.06,yt:.82,topW:1},
+      {x:-2.45,hw:1.04,yb:.05,yt:.90,topW:.98},
+      {x:-1.95,hw:1.01,yb:.05,yt:1.00,topW:.92},
+      {x:-1.45,hw:.99,yb:.05,yt:1.20,topW:.58},
+      {x:-0.95,hw:.99,yb:.05,yt:1.36,topW:.52},
+      {x:-0.45,hw:1.00,yb:.05,yt:1.43,topW:.50},
+      {x: 0.20,hw:1.01,yb:.05,yt:1.44,topW:.50},
+      {x: 0.85,hw:1.02,yb:.05,yt:1.37,topW:.54},
+      {x: 1.45,hw:1.04,yb:.05,yt:1.20,topW:.64},
+      {x: 2.05,hw:1.08,yb:.05,yt:1.00,topW:.84},
+      {x: 2.60,hw:1.11,yb:.05,yt:.90,topW:.96},
+      {x: 2.95,hw:1.11,yb:.06,yt:.84,topW:1},
+      {x: 3.45,hw:1.02,yb:.09,yt:.76,topW:1},
+      {x: 3.90,hw:.82,yb:.13,yt:.64,topW:1},
+      {x: 4.18,hw:.52,yb:.18,yt:.52,topW:1},
+      {x: 4.30,hw:.30,yb:.24,yt:.46,topW:1}
     ];
     buildBody(sec,faces);
     // wheels
     const wp=[v(-2.9,0.58,1.12),v(2.95,0.58,1.12),v(-2.9,0.58,-1.12),v(2.95,0.58,-1.12)];
     wp.forEach(p=>{
       const out=p.z>0?1:-1;
-      faces.push(...tag(cylFaces(p,0.62,0.42,'z','#141519','wheels',22,1),'tire'));
-      faces.push(...tag(cylFaces(p,0.40,0.45,'z','#22262c','wheels',20,1),'tire'));
-      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.02),0.39,0.05,'z','#aeb6bf','wheels',20,1),'chrome'));
-      for(let a=0;a<5;a++) faces.push(...tag(spokeFaces(p,0.62,a*Math.PI*2/5,'#c2cad2','wheels',out*0.24),'chrome'));
-      faces.push(...tag(cylFaces(p,0.12,0.5,'z','#6b7480','wheels',12,1),'chrome'));
-      if(PARTS.brakes.visible) faces.push(...tag(cylFaces(v(p.x,p.y,p.z-out*0.05),0.30,0.04,'z','#3a3f45','brakes',18,1),'matte'));
+      faces.push(...tag(cylFaces(p,0.64,0.40,'z','#0f1013','wheels',26,1),'tire'));            // tyre tread
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.005),0.63,0.42,'z','#191b1f','wheels',26,1),'tire')); // sidewall
+      faces.push(...tag(cylFaces(p,0.42,0.44,'z','#23272d','wheels',22,1),'tire'));             // inner barrel
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.03),0.41,0.05,'z','#9aa3ad','wheels',24,1),'chrome')); // rim lip
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.02),0.40,0.04,'z','#cdd5dd','wheels',24,1),'chrome')); // rim face
+      for(let a=0;a<7;a++) faces.push(...tag(spokeFaces(p,0.66,a*Math.PI*2/7,'#c2cad2','wheels',out*0.25),'chrome'));
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.04),0.13,0.46,'z','#5c656f','wheels',14,1),'chrome'));  // hub
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.06),0.05,0.46,'z','#ffb400','wheels',8,1),'matte'));    // hub nut
+      if(PARTS.brakes.visible){
+        faces.push(...tag(cylFaces(v(p.x,p.y,p.z-out*0.05),0.31,0.04,'z','#33373d','brakes',22,1),'matte')); // disc
+        faces.push(...tag(boxFaces(v(p.x+0.05,p.y+0.30,p.z-out*0.05),v(0.16,0.18,0.12),'#e23b3b','brakes'),'matte')); // caliper
+      }
     });
     // head & tail lights, grille, splitter, mirrors
     [0.62,-0.62].forEach(z=>faces.push(...tag(boxFaces(v(-3.84,0.50,z),v(0.12,0.12,0.26),'#d8e8f6','shell',{x:0,y:0,z:0.25},1),'light')));
@@ -911,16 +927,33 @@
     const w=canvas.clientWidth,h=canvas.clientHeight;
     ctx.clearRect(0,0,w,h);
 
-    // floor: studio light + contact shadow (solid) or amber engineering glow
+    // floor: studio light + reflection + contact shadow (solid) or amber engineering glow
     if(state.mode==='solid'){
       const lp=ctx.createRadialGradient(w/2,h*0.40,30,w/2,h*0.58,Math.max(w,h)*0.62);
       lp.addColorStop(0,'rgba(130,160,180,.10)'); lp.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=lp; ctx.fillRect(0,0,w,h);
       const base=project(tform(v(0,-0.18,0),v(0,0,0),{x:0,y:0,z:0},''));
       const u=base.s*9.2;
+      // ground reflection (mirror the car about y=0, dim)
+      state.reflect=true;
+      const rf=buildScene();
+      rf.forEach(f=>{const a=f.verts[0],b=f.verts[1],c=f.verts[2];
+        f.normal=normalize(cross(sub(b,a),sub(c,a)));
+        f.depth=f.verts.reduce((s,p)=>s+p.z,0)/f.verts.length; f.proj=f.verts.map(project);});
+      rf.sort((a,b)=>a.depth-b.depth);
+      for(const f of rf){
+        if(f.mat==='light'||f.mat==='tail') continue;
+        ctx.globalAlpha=f.mat==='glass'?0.08:0.16;
+        ctx.fillStyle=shadeFace(f);
+        ctx.beginPath(); f.proj.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha=1; state.reflect=false;
+      const fade=ctx.createLinearGradient(0,base.y,0,h);
+      fade.addColorStop(0,'rgba(7,8,9,0)'); fade.addColorStop(0.5,'rgba(7,8,9,.78)'); fade.addColorStop(1,'#070809');
+      ctx.fillStyle=fade; ctx.fillRect(0,base.y,w,h-base.y);
       const sh=ctx.createRadialGradient(base.x,base.y,8,base.x,base.y,3.6*u);
-      sh.addColorStop(0,'rgba(0,0,0,.55)'); sh.addColorStop(0.7,'rgba(0,0,0,.28)'); sh.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(base.x,base.y,3.6*u,0.7*u,0,0,Math.PI*2); ctx.fill();
+      sh.addColorStop(0,'rgba(0,0,0,.5)'); sh.addColorStop(0.7,'rgba(0,0,0,.24)'); sh.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(base.x,base.y,3.6*u,0.66*u,0,0,Math.PI*2); ctx.fill();
     } else {
       const glow=ctx.createRadialGradient(w/2,h*0.72,20,w/2,h*0.72,Math.min(w,h)*0.4);
       glow.addColorStop(0,'rgba(255,180,0,.10)'); glow.addColorStop(1,'rgba(255,180,0,0)');
@@ -976,6 +1009,11 @@
     }
     ctx.globalAlpha=1;
 
+    // subtle vignette for depth
+    const vg=ctx.createRadialGradient(w/2,h*0.48,Math.min(w,h)*0.34,w/2,h*0.52,Math.max(w,h)*0.72);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.34)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,w,h);
+
     // COG marker
     if(state.cog){
       const t=totals();
@@ -990,7 +1028,7 @@
 
     drawLabels();
 
-    if(state.orbit && !state.dragging) state.rotY += 0.005;
+    if(state.orbit && !state.dragging) state.rotY += 0.0038;
     requestAnimationFrame(render);
   }
 
