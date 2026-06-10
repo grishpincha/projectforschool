@@ -286,6 +286,30 @@
   .lg{display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:.1em;color:var(--muted)}
   .lg i{width:14px;height:3px;border-radius:2px;display:inline-block}
 
+  /* guided tour card */
+  .tour-card{position:absolute;left:50%;bottom:104px;transform:translateX(-50%);width:min(560px,72%);
+    background:rgba(8,11,14,.92);border:1px solid var(--amber);border-radius:13px;backdrop-filter:blur(8px);
+    padding:14px 16px;display:none;pointer-events:auto;box-shadow:0 18px 60px rgba(0,0,0,.5)}
+  .tour-card.show{display:block}
+  .tc-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .tc-step{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--amber)}
+  .tc-title{font-size:14px;font-weight:800;color:var(--text);letter-spacing:.02em}
+  .tc-x{margin-left:auto;border:1px solid var(--line2);background:transparent;color:var(--muted);
+    font-family:var(--mono);font-size:9px;letter-spacing:.1em;padding:5px 9px;border-radius:6px;cursor:pointer}
+  .tc-x:hover{border-color:var(--red);color:var(--red)}
+  .tc-text{font-size:12px;line-height:1.6;color:var(--muted);min-height:38px}
+  .tc-nav{display:flex;align-items:center;gap:12px;margin-top:10px}
+  .tc-btn{border:1px solid var(--line2);background:var(--carbon);color:var(--text);font-family:var(--mono);
+    font-size:10px;font-weight:700;letter-spacing:.1em;padding:8px 14px;border-radius:7px;cursor:pointer;transition:.15s}
+  .tc-btn:hover{border-color:var(--amber);color:var(--amber)}
+  .tc-next{margin-left:auto;background:rgba(255,180,0,.14);border-color:var(--amber);color:var(--amber)}
+  .tc-dots{display:flex;gap:5px}
+  .tc-dots i{width:6px;height:6px;border-radius:50%;background:#37424a;transition:.15s}
+  .tc-dots i.on{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+  .sw{width:26px;height:26px;border-radius:7px;cursor:pointer;border:2px solid transparent;transition:.14s}
+  .sw:hover{transform:scale(1.08)}
+  .sw.on{border-color:#fff;box-shadow:0 0 10px rgba(255,255,255,.3)}
+
   @media (max-width:1080px){
     .app{grid-template-columns:240px 1fr 290px}
     .topbar .spec-strip .ts-item:nth-child(n+4){display:none}
@@ -334,7 +358,22 @@
         <button class="btn active" id="flowBtn">↯ FLOW</button>
       </div>
 
-      <div class="block-title cy section-gap"><span class="n">03</span> SYSTEMS</div>
+      <div class="block-title section-gap"><span class="n">03</span> CAMERA</div>
+      <div class="seg" id="camSeg" style="grid-template-columns:1fr 1fr">
+        <button class="btn" data-cam="hero">3/4</button>
+        <button class="btn" data-cam="side">SIDE</button>
+        <button class="btn" data-cam="front">FRONT</button>
+        <button class="btn" data-cam="top">TOP</button>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn" id="tourBtn">▶ GUIDED TOUR</button>
+        <button class="btn" id="saveBtn">⤓ SAVE IMG</button>
+      </div>
+
+      <div class="block-title section-gap"><span class="n">04</span> PAINT</div>
+      <div id="paint" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+
+      <div class="block-title cy section-gap"><span class="n">05</span> SYSTEMS</div>
       <div class="sys" id="systems"></div>
     </div>
   </aside>
@@ -367,6 +406,20 @@
       </div>
 
       <div class="footer-hint">DRAG = ORBIT · WHEEL = ZOOM · CLICK A SYSTEM TO INSPECT</div>
+
+      <div class="tour-card" id="tourCard">
+        <div class="tc-top">
+          <span class="tc-step" id="tcStep">01 / 09</span>
+          <span class="tc-title" id="tcTitle">ICE V6 Turbo</span>
+          <button class="tc-x" id="tcExit">✕ EXIT TOUR</button>
+        </div>
+        <div class="tc-text" id="tcText"></div>
+        <div class="tc-nav">
+          <button class="tc-btn" id="tcPrev">‹ PREV</button>
+          <div class="tc-dots" id="tcDots"></div>
+          <button class="tc-btn tc-next" id="tcNext">NEXT ›</button>
+        </div>
+      </div>
 
       <div class="tele">
         <div class="tele-head">
@@ -545,7 +598,8 @@
   const state = {
     rotY:-0.75, rotX:-0.20, zoom:84, explode:0,
     orbit:true, flow:true, cog:false, selected:'overview',
-    mode:'solid', dragging:false, lastX:0, lastY:0, moved:0, reflect:false
+    mode:'solid', dragging:false, lastX:0, lastY:0, moved:0, reflect:false,
+    paint:'#d11a2f', tour:false, tourIdx:0
   };
 
   // ---------- telemetry ----------
@@ -683,7 +737,7 @@
   }
 
   // ---------- realistic shading (paint / glass / chrome / lights) ----------
-  const PAINT = '#d11a2f';                 // car body colour
+  // car paint colour lives in state.paint (set by the picker)
   const ENV_SKY = {r:0xcc,g:0xe0,b:0xf2};  // top reflection
   const ENV_GND = {r:0x0b,g:0x0e,b:0x12};  // bottom reflection
   const TOCAM = {x:0,y:0,z:-1};
@@ -741,7 +795,7 @@
         const midX=(A.x+B.x)/2, midY=(p1.y+p2.y+p3.y+p4.y)/4, midZ=(p1.z+p3.z)/2;
         const glass = midX>-1.6 && midX<2.1 && midY>0.98 && Math.abs(midZ)<0.92;
         faces.push({verts:[p1,p2,p3,p4].map(p=>tform(p,v(0,0,0),{x:0,y:0,z:0},'shell')),
-          color:glass?'#0f1c26':PAINT, partId:'shell', mat:glass?'glass':'paint'});
+          color:glass?'#0f1c26':state.paint, partId:'shell', mat:glass?'glass':'paint'});
       }
     }
     [sections[0],sections[sections.length-1]].forEach(sec=>{
@@ -749,7 +803,7 @@
       for(let k=0;k<M;k++){
         const t0=k/M*2*Math.PI,t1=(k+1)/M*2*Math.PI;
         faces.push({verts:[cx,ringPoint(sec,t0),ringPoint(sec,t1)].map(p=>tform(p,v(0,0,0),{x:0,y:0,z:0},'shell')),
-          color:PAINT, partId:'shell', mat:'paint'});
+          color:state.paint, partId:'shell', mat:'paint'});
       }
     });
   }
@@ -802,7 +856,7 @@
     faces.push(...tag(boxFaces(v(-3.98,0.07,0),v(0.50,0.06,2.0),'#0d1013','shell'),'grille'));
     [1.0,-1.0].forEach(z=>{
       faces.push(...tag(boxFaces(v(-1.42,0.86,z*0.94),v(0.09,0.05,0.16),'#15171b','shell'),'matte'));
-      faces.push(...tag(boxFaces(v(-1.36,0.90,z*1.06),v(0.20,0.12,0.09),PAINT,'shell'),'paint'));
+      faces.push(...tag(boxFaces(v(-1.36,0.90,z*1.06),v(0.20,0.12,0.09),state.paint,'shell'),'paint'));
     });
     if(PARTS.aero.visible){
       faces.push(...tag(boxFaces(v(3.55,1.20,0),v(0.55,0.06,2.0),'#17191d','aero'),'matte'));
@@ -1254,7 +1308,7 @@
   $('flowBtn').addEventListener('click',function(){ PARTS.arrows.visible=!PARTS.arrows.visible; this.classList.toggle('active',PARTS.arrows.visible); buildSystems(); });
   $('cogBtn').addEventListener('click',function(){ state.cog=!state.cog; this.classList.toggle('active',state.cog); });
   $('resetBtn').addEventListener('click',()=>{
-    state.rotY=-0.75; state.rotX=-0.26; state.zoom=84; state.explode=0; explodeEl.value=0; $('explodeVal').textContent='0%';
+    state.rotY=-0.75; state.rotX=-0.20; state.zoom=84; state.explode=0; explodeEl.value=0; $('explodeVal').textContent='0%';
     state.selected='overview'; refreshInspector('overview'); buildSystems(); setTab('insp');
   });
 
@@ -1267,6 +1321,67 @@
     recBadge.classList.toggle('live',tele.running);
     recText.textContent=tele.running?'TELEMETRY LIVE':'TELEMETRY IDLE';
   });
+
+  // ---------- camera presets ----------
+  const CAMS={ hero:{rotY:-0.75,rotX:-0.20,zoom:84}, side:{rotY:0,rotX:-0.05,zoom:86},
+               front:{rotY:-1.55,rotX:-0.12,zoom:74}, top:{rotY:-0.6,rotX:-1.02,zoom:90} };
+  function setCam(c){ const m=CAMS[c]; if(!m)return; state.rotY=m.rotY; state.rotX=m.rotX; state.zoom=m.zoom;
+    state.orbit=false; $('orbitBtn').classList.remove('active'); }
+  document.querySelectorAll('#camSeg .btn').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('#camSeg .btn').forEach(x=>x.classList.toggle('active',x===b)); setCam(b.dataset.cam);
+  }));
+
+  // ---------- paint picker ----------
+  const PAINTS=['#d11a2f','#1f6feb','#11a36b','#ff8c1a','#d8dde3','#101216','#7a3df0','#f4c430'];
+  const paintBox=$('paint');
+  PAINTS.forEach(c=>{
+    const s=document.createElement('div'); s.className='sw'+(c===state.paint?' on':''); s.style.background=c; s.dataset.c=c;
+    s.addEventListener('click',()=>{ state.paint=c; document.querySelectorAll('.sw').forEach(x=>x.classList.toggle('on',x===s)); });
+    paintBox.appendChild(s);
+  });
+
+  // ---------- save image ----------
+  $('saveBtn').addEventListener('click',()=>{
+    try{ const a=document.createElement('a'); a.download='HX-01_render.png'; a.href=canvas.toDataURL('image/png'); a.click(); }
+    catch(e){ alert('Could not export image in this browser.'); }
+  });
+
+  // ---------- guided tour ----------
+  const TOUR=[
+    {id:'shell', cam:{rotY:-0.75,rotX:-0.18,zoom:80}, text:'This is the full hybrid race powertrain. A combustion engine and electric motors work together, sharing one driveline. Use NEXT to meet each system.'},
+    {id:'engine', cam:{rotY:-1.0,rotX:-0.15,zoom:92}, text:'The turbocharged V6 burns fuel and is the main power source at high speed — just like the petrol engine in a road hybrid on the motorway.'},
+    {id:'motor', cam:{rotY:-0.6,rotX:-0.2,zoom:96}, text:'The MGU-K is the racing electric motor. It adds instant boost out of corners and, under braking, becomes a generator to harvest energy.'},
+    {id:'battery', cam:{rotY:-0.4,rotX:-0.35,zoom:92}, text:'The high-voltage energy store holds the electricity. It is charged by braking and discharged when the driver deploys boost — recharging on the move, never plugged in.'},
+    {id:'pcu', cam:{rotY:-1.0,rotX:-0.3,zoom:96}, text:'The inverter / PCU is the electrical brain. It routes power between the battery and the motor thousands of times a second.'},
+    {id:'transmission', cam:{rotY:-0.5,rotX:-0.18,zoom:90}, text:'The gearbox blends the engine and motor outputs and sends the combined power to the wheels — where the two paths meet.'},
+    {id:'brakes', cam:{rotY:-0.8,rotX:-0.15,zoom:96}, text:'Carbon brakes slow the car while the motor harvests the braking energy — this is regenerative braking, the heart of a hybrid.'},
+    {id:'fuel', cam:{rotY:-0.3,rotX:-0.18,zoom:92}, text:'The fuel cell feeds the engine. Because the electric side does so much work, the hybrid burns far less fuel for the same lap time.'},
+    {id:'aero', cam:{rotY:-0.9,rotX:-0.22,zoom:84}, text:'The aero package presses the car down so it can brake harder — and harder braking means more energy recovered. Aero and the hybrid work together.'}
+  ];
+  const tourCard=$('tourCard');
+  function tourGoto(i){
+    state.tourIdx=(i+TOUR.length)%TOUR.length;
+    const s=TOUR[state.tourIdx];
+    selectPart(s.id);
+    if(s.cam){ state.rotY=s.cam.rotY; state.rotX=s.cam.rotX; state.zoom=s.cam.zoom; }
+    $('tcStep').textContent=String(state.tourIdx+1).padStart(2,'0')+' / '+String(TOUR.length).padStart(2,'0');
+    $('tcTitle').textContent=PARTS[s.id]?PARTS[s.id].name:'Overview';
+    $('tcText').textContent=s.text;
+    $('tcDots').innerHTML=TOUR.map((_,k)=>`<i class="${k===state.tourIdx?'on':''}"></i>`).join('');
+  }
+  function startTour(){
+    state.tour=true; state.orbit=false; $('orbitBtn').classList.remove('active');
+    state.mode='xray'; document.querySelectorAll('#viewSeg .btn').forEach(x=>x.classList.toggle('active',x.dataset.mode==='xray'));
+    updateHud(); tourCard.classList.add('show'); $('tourBtn').classList.add('active'); tourGoto(0);
+  }
+  function endTour(){
+    state.tour=false; tourCard.classList.remove('show'); $('tourBtn').classList.remove('active');
+    state.orbit=true; $('orbitBtn').classList.add('active');
+  }
+  $('tourBtn').addEventListener('click',()=>{ state.tour?endTour():startTour(); });
+  $('tcExit').addEventListener('click',endTour);
+  $('tcNext').addEventListener('click',()=>tourGoto(state.tourIdx+1));
+  $('tcPrev').addEventListener('click',()=>tourGoto(state.tourIdx-1));
 
   // ---------- interaction ----------
   canvas.addEventListener('pointerdown',e=>{ state.dragging=true; state.lastX=e.clientX; state.lastY=e.clientY; state.moved=0; });
