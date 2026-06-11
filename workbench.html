@@ -338,8 +338,9 @@
   <aside class="col left">
     <div class="scroll">
       <div class="block-title"><span class="n">01</span> VIEW MODE</div>
-      <div class="seg" id="viewSeg">
+      <div class="seg" id="viewSeg" style="grid-template-columns:1fr 1fr">
         <button class="btn active" data-mode="solid">SOLID</button>
+        <button class="btn" data-mode="cut">CUTAWAY</button>
         <button class="btn" data-mode="xray">X-RAY</button>
         <button class="btn" data-mode="wire">WIRE</button>
       </div>
@@ -531,7 +532,9 @@
           <div class="res-card"><div class="k">MIN CORNER</div><div class="v" id="rMin">—</div></div>
           <div class="res-card"><div class="k">ENERGY RECOV</div><div class="v" id="rEn" style="color:var(--green)">—</div></div>
         </div>
-        <div class="note">Outputs come from a simplified point-mass vehicle model fed by the installed systems and the setup above. Remove the engine, battery or aero on the left and re-run — the numbers respond like a real sim. Figures are illustrative for learning, not a validated CFD/lap model.</div>
+        <button class="btn" id="refBtn" style="width:100%;margin-top:10px">◉ SET THIS AS REFERENCE LAP</button>
+        <div id="refInfo" style="font-size:9.5px;letter-spacing:.08em;color:var(--cyan);margin-top:8px;display:none"></div>
+        <div class="note">Set a reference lap, then change the setup (tyres, wing, deploy) or remove a system and run the Lap test again — the chart overlays both so you can see the time you gained or lost.</div>
       </div>
     </div>
   </aside>
@@ -785,7 +788,7 @@
     const wf=1-(1-sec.topW)*smooth(hf);
     return v(sec.x, yy, sec.hw*wf*Math.cos(theta));
   }
-  function buildBody(sections,faces){
+  function buildBody(sections,faces,cut){
     const M=32;
     for(let i=0;i<sections.length-1;i++){
       const A=sections[i],B=sections[i+1];
@@ -793,11 +796,13 @@
         const t0=k/M*2*Math.PI, t1=(k+1)/M*2*Math.PI;
         const p1=ringPoint(A,t0),p2=ringPoint(A,t1),p3=ringPoint(B,t1),p4=ringPoint(B,t0);
         const midX=(A.x+B.x)/2, midY=(p1.y+p2.y+p3.y+p4.y)/4, midZ=(p1.z+p3.z)/2;
+        if(cut && midZ>0.18 && midY>0.12) continue;   // slice off near upper side
         const glass = midX>-1.6 && midX<2.1 && midY>0.98 && Math.abs(midZ)<0.92;
         faces.push({verts:[p1,p2,p3,p4].map(p=>tform(p,v(0,0,0),{x:0,y:0,z:0},'shell')),
           color:glass?'#0f1c26':state.paint, partId:'shell', mat:glass?'glass':'paint'});
       }
     }
+    if(cut) return;
     [sections[0],sections[sections.length-1]].forEach(sec=>{
       const cx=v(sec.x,(sec.yb+sec.yt)/2,0);
       for(let k=0;k<M;k++){
@@ -866,9 +871,70 @@
     return faces;
   }
 
+  // ---------- solid internal components (for cutaway) ----------
+  function buildInternals(faces){
+    if(PARTS.engine.visible){
+      faces.push(...tag(boxFaces(v(-2.1,1.05,0),v(1.25,0.66,0.95),'#ffb454','engine'),'matte'));
+      faces.push(...tag(boxFaces(v(-2.1,1.5,0),v(0.85,0.22,0.75),'#ffd08a','engine'),'matte'));
+      for(let i=0;i<4;i++) faces.push(...tag(cylFaces(v(-2.5+i*0.24,1.4,0),0.13,0.88,'z','#cf7e2f','engine',12,1),'matte'));
+      faces.push(...tag(cylFaces(v(-1.35,1.25,0.55),0.2,0.36,'x','#b86a25','engine',14,1),'matte'));
+    }
+    if(PARTS.motor.visible){
+      faces.push(...tag(cylFaces(v(-0.85,1.0,0),0.42,0.84,'x','#8a7cff','motor',18,1),'matte'));
+      faces.push(...tag(cylFaces(v(-0.43,1.0,0),0.45,0.08,'x','#33d6ff','motor',18,1),'matte'));
+    }
+    if(PARTS.transmission.visible){
+      faces.push(...tag(cylFaces(v(-0.05,0.94,0),0.34,0.7,'x','#cbd5df','transmission',18,1),'matte'));
+      faces.push(...tag(cylFaces(v(1.15,0.78,0),0.07,2.2,'x','#aeb8c2','transmission',12,1),'matte'));
+    }
+    if(PARTS.battery.visible){
+      faces.push(...tag(boxFaces(v(0.5,0.68,0),v(2.4,0.3,1.0),'#35e48f','battery'),'matte'));
+      for(let x=-0.3;x<=1.4;x+=0.42) faces.push(...tag(boxFaces(v(x,0.9,0),v(0.28,0.10,0.7),'#13b5ec','battery'),'matte'));
+    }
+    if(PARTS.pcu.visible){
+      faces.push(...tag(boxFaces(v(-1.05,1.55,-0.55),v(0.8,0.32,0.6),'#59d7ff','pcu'),'matte'));
+    }
+    if(PARTS.fuel.visible){
+      faces.push(...tag(boxFaces(v(2.15,0.8,0),v(0.95,0.36,0.9),'#ffd15c','fuel'),'matte'));
+    }
+  }
+
+  // ---------- cutaway: glossy exterior sliced open over solid internals ----------
+  function buildCutaway(){
+    const faces=[];
+    const sec=[
+      {x:-4.30,hw:.32,yb:.20,yt:.40,topW:1},{x:-4.05,hw:.58,yb:.15,yt:.50,topW:1},
+      {x:-3.70,hw:.82,yb:.10,yt:.62,topW:1},{x:-3.25,hw:.97,yb:.07,yt:.73,topW:1},
+      {x:-2.90,hw:1.08,yb:.06,yt:.82,topW:1},{x:-2.45,hw:1.04,yb:.05,yt:.90,topW:.98},
+      {x:-1.95,hw:1.01,yb:.05,yt:1.00,topW:.92},{x:-1.45,hw:.99,yb:.05,yt:1.20,topW:.58},
+      {x:-0.95,hw:.99,yb:.05,yt:1.36,topW:.52},{x:-0.45,hw:1.00,yb:.05,yt:1.43,topW:.50},
+      {x:0.20,hw:1.01,yb:.05,yt:1.44,topW:.50},{x:0.85,hw:1.02,yb:.05,yt:1.37,topW:.54},
+      {x:1.45,hw:1.04,yb:.05,yt:1.20,topW:.64},{x:2.05,hw:1.08,yb:.05,yt:1.00,topW:.84},
+      {x:2.60,hw:1.11,yb:.05,yt:.90,topW:.96},{x:2.95,hw:1.11,yb:.06,yt:.84,topW:1},
+      {x:3.45,hw:1.02,yb:.09,yt:.76,topW:1},{x:3.90,hw:.82,yb:.13,yt:.64,topW:1},
+      {x:4.18,hw:.52,yb:.18,yt:.52,topW:1},{x:4.30,hw:.30,yb:.24,yt:.46,topW:1}
+    ];
+    buildBody(sec,faces,true);
+    buildInternals(faces);
+    // wheels (far side full, near side rim only so it doesn't block the cut)
+    const wp=[v(-2.9,0.58,1.12),v(2.95,0.58,1.12),v(-2.9,0.58,-1.12),v(2.95,0.58,-1.12)];
+    wp.forEach(p=>{
+      const out=p.z>0?1:-1;
+      faces.push(...tag(cylFaces(p,0.64,0.40,'z','#0f1013','wheels',24,1),'tire'));
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.02),0.40,0.05,'z','#cdd5dd','wheels',22,1),'chrome'));
+      for(let a=0;a<7;a++) faces.push(...tag(spokeFaces(p,0.66,a*Math.PI*2/7,'#c2cad2','wheels',out*0.24),'chrome'));
+      faces.push(...tag(cylFaces(v(p.x,p.y,p.z+out*0.04),0.12,0.46,'z','#5c656f','wheels',12,1),'chrome'));
+    });
+    // taillight + grille keep car readable
+    faces.push(...tag(boxFaces(v(4.06,0.66,0),v(0.10,0.16,1.66),'#ff2230','shell'),'tail'));
+    faces.push(...tag(boxFaces(v(-3.95,0.26,0),v(0.10,0.26,1.25),'#0b0e11','shell'),'grille'));
+    return faces;
+  }
+
   // ---------- scene ----------
   function buildScene(){
     if(state.mode==='solid') return buildExterior();
+    if(state.mode==='cut') return buildCutaway();
     const faces=[];
     // wheel positions (front negative x)
     const wp=[v(-2.9,0.6,1.5),v(2.95,0.6,1.5),v(-2.9,0.6,-1.5),v(2.95,0.6,-1.5)];
@@ -982,7 +1048,7 @@
     ctx.clearRect(0,0,w,h);
 
     // floor: studio light + reflection + contact shadow (solid) or amber engineering glow
-    if(state.mode==='solid'){
+    if(state.mode==='solid'||state.mode==='cut'){
       const lp=ctx.createRadialGradient(w/2,h*0.40,30,w/2,h*0.58,Math.max(w,h)*0.62);
       lp.addColorStop(0,'rgba(130,160,180,.10)'); lp.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=lp; ctx.fillRect(0,0,w,h);
@@ -1045,7 +1111,7 @@
         ctx.globalAlpha=sel?1:0.5;
         ctx.strokeStyle=sel?'#ffffff':f.color;
         ctx.lineWidth=sel?1.6:0.8; ctx.stroke();
-      } else if(state.mode==='solid'){
+      } else if(state.mode==='solid'||state.mode==='cut'){
         const col=shadeFace(f);
         ctx.globalAlpha = f.mat==='glass'?0.55:1;
         ctx.fillStyle=col; ctx.fill();
@@ -1300,6 +1366,7 @@
     const b=e.target.closest('button'); if(!b) return;
     state.mode=b.dataset.mode;
     document.querySelectorAll('#viewSeg .btn').forEach(x=>x.classList.toggle('active',x===b));
+    if(state.mode==='cut'){ state.rotY=2.42; state.rotX=-0.22; state.zoom=82; state.orbit=false; $('orbitBtn').classList.remove('active'); }
     updateHud();
   });
   const explodeEl=$('explode');
@@ -1411,7 +1478,7 @@
   // ================= SIMULATION ENGINE =================
   const SIM = {
     strategy:'qualy', tyre:'soft', wing:6,
-    series:null, // last lap sim time-series
+    series:null, ref:null, // last lap sim time-series + reference lap
   };
   const PH = { rho:1.225, g:9.81, Crr:0.012, extra:180, vmax:96, LS:0.88, accelGrip:0.80 }; // vmax ~345 km/h
   const TRACKSEG = [
@@ -1639,10 +1706,21 @@
       const xr=[0,r.len/1000];
       if(test==='lap'){
         anaTtl.textContent='LAP-TIME SIMULATION'; anaSub.textContent='SPEED vs DISTANCE · '+(r.len/1000).toFixed(2)+' km circuit';
-        legend([{c:'#33d6ff',t:'SPEED km/h'}]);
         axes(w,h,pad,xr,[0,360],'DISTANCE (km)','SPEED');
+        if(SIM.ref){
+          legend([{c:'#33d6ff',t:'CURRENT'},{c:'#7d909c',t:'REFERENCE'}]);
+          plot(SIM.ref.dist.map(d=>d/1000),SIM.ref.vKmh,[0,SIM.ref.len/1000],[0,360],pad,w,h,'rgba(125,144,156,.7)');
+        } else legend([{c:'#33d6ff',t:'SPEED km/h'}]);
         plot(r.dist.map(d=>d/1000),r.vKmh,xr,[0,360],pad,w,h,'#33d6ff','rgba(51,214,255,.10)');
-        anaStats.innerHTML=stat('LAP TIME',r.lapTime.toFixed(2)+'s')+stat('TOP SPEED',Math.round(r.top)+' km/h')+stat('MIN CORNER',Math.round(r.minc)+' km/h')+stat('AVG SPEED',Math.round(r.avg)+' km/h');
+        if(SIM.ref){
+          const d=r.lapTime-SIM.ref.lapTime;
+          const dc=d<0?'#33e08a':'#ff7a7a';
+          anaStats.innerHTML=stat('LAP TIME',r.lapTime.toFixed(2)+'s')+stat('REFERENCE',SIM.ref.lapTime.toFixed(2)+'s')
+            +`<div class="ana-stat"><div class="k">DELTA</div><div class="v" style="color:${dc}">${d>=0?'+':''}${d.toFixed(2)}s</div></div>`
+            +stat('TOP SPEED',Math.round(r.top)+' km/h');
+        } else {
+          anaStats.innerHTML=stat('LAP TIME',r.lapTime.toFixed(2)+'s')+stat('TOP SPEED',Math.round(r.top)+' km/h')+stat('MIN CORNER',Math.round(r.minc)+' km/h')+stat('AVG SPEED',Math.round(r.avg)+' km/h');
+        }
       } else {
         anaTtl.textContent='ENERGY / SOC TRACE'; anaSub.textContent='BATTERY STATE-OF-CHARGE around the lap';
         legend([{c:'#33e08a',t:'BATTERY SOC %'},{c:'#33d6ff',t:'MGU-K kW'}]);
@@ -1715,6 +1793,16 @@
   }));
   $('wing').addEventListener('input',e=>{ SIM.wing=+e.target.value; $('wingVal').textContent=SIM.wing; recalcSim(); });
   document.querySelectorAll('.test-btn').forEach(b=>b.addEventListener('click',()=>{ recalcSim(); openAnalysis(b.dataset.test); }));
+  $('refBtn').addEventListener('click',()=>{
+    recalcSim();
+    if(SIM.ref){ SIM.ref=null; $('refBtn').textContent='◉ SET THIS AS REFERENCE LAP'; $('refBtn').classList.remove('active'); $('refInfo').style.display='none'; return; }
+    if(!SIM.series||!SIM.series.valid) return;
+    SIM.ref=SIM.series;
+    const tyre=SIM.tyre.toUpperCase(), strat=SIM.strategy.toUpperCase();
+    $('refInfo').textContent='REFERENCE: '+SIM.ref.lapTime.toFixed(2)+'s · '+tyre+' · WING '+SIM.wing+' · '+strat;
+    $('refInfo').style.display='block';
+    $('refBtn').textContent='✕ CLEAR REFERENCE LAP'; $('refBtn').classList.add('active');
+  });
   $('anaClose').addEventListener('click',()=>overlay.classList.remove('show'));
 
   // ================= boot =================
