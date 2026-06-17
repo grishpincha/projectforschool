@@ -316,6 +316,41 @@
   .drive-badge.ev .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
   .drive-badge.sport .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
 
+  /* driver tag in top bar */
+  .driver-tag{display:flex;flex-direction:column;justify-content:center;padding:0 14px;border-left:1px solid var(--line);margin-left:auto}
+  .driver-tag .k{font-size:9px;color:var(--dim);letter-spacing:.18em}
+  .driver-tag .v{font-size:13px;color:var(--cyan);font-weight:700;letter-spacing:.06em}
+  .driver-tag + .rec{margin-left:18px}
+
+  /* access terminal */
+  #loginGate{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(900px 600px at 50% 30%,rgba(255,180,0,.06),transparent 60%),linear-gradient(180deg,#0a0e12,#050607);
+    backdrop-filter:blur(3px)}
+  #loginGate.hide{opacity:0;pointer-events:none;transition:opacity .5s}
+  .lg-card{width:380px;max-width:90vw;border:1px solid var(--line2);border-radius:16px;padding:26px;
+    background:linear-gradient(180deg,var(--panel),var(--bg2));box-shadow:0 30px 90px rgba(0,0,0,.6);position:relative;overflow:hidden}
+  .lg-brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .lg-mark{width:40px;height:40px;border:1.5px solid var(--amber);border-radius:9px;display:grid;place-items:center;
+    color:var(--amber);font-weight:800;font-size:15px;box-shadow:0 0 18px rgba(255,180,0,.25) inset}
+  .lg-brand b{font-size:14px;letter-spacing:.12em;color:var(--text)}
+  .lg-brand span{display:block;font-size:8.5px;color:var(--muted);letter-spacing:.16em;margin-top:3px}
+  .lg-scan{height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent);margin:16px 0 18px;opacity:.7;
+    animation:scan 2.4s ease-in-out infinite}
+  @keyframes scan{0%,100%{transform:translateX(-30%);opacity:.3}50%{transform:translateX(30%);opacity:.8}}
+  .lg-lab{display:block;font-size:9px;letter-spacing:.18em;color:var(--muted);margin:12px 0 6px}
+  .lg-in{width:100%;background:var(--carbon);border:1px solid var(--line2);border-radius:8px;color:var(--text);
+    font-family:var(--mono);font-size:13px;letter-spacing:.08em;padding:11px 12px;outline:none;transition:.15s}
+  .lg-in:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(255,180,0,.12)}
+  .lg-btn{width:100%;margin-top:18px;background:var(--amber);color:#16120a;border:none;border-radius:8px;
+    font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.12em;padding:13px;cursor:pointer;transition:.16s}
+  .lg-btn:hover{box-shadow:0 0 26px rgba(255,180,0,.4)}
+  .lg-row{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+  .lg-row #lgMsg{font-size:8.5px;letter-spacing:.14em;color:var(--green)}
+  .lg-row #lgMsg.err{color:var(--red)}
+  .lg-row a{font-family:var(--mono);font-size:10px;color:var(--muted);cursor:pointer;letter-spacing:.08em}
+  .lg-row a:hover{color:var(--text)}
+  .lg-note{font-size:8.5px;line-height:1.5;color:var(--dim);letter-spacing:.04em;margin-top:16px;text-align:center}
+
   @media (max-width:1080px){
     .app{grid-template-columns:240px 1fr 290px}
     .topbar .spec-strip .ts-item:nth-child(n+4){display:none}
@@ -323,6 +358,20 @@
 </style>
 </head>
 <body>
+
+<div id="loginGate">
+  <div class="lg-card">
+    <div class="lg-brand"><span class="lg-mark">HX</span><div><b>HX-01 ACCESS TERMINAL</b><span>HYBRID RACE POWERTRAIN · AUTHORISED PERSONNEL</span></div></div>
+    <div class="lg-scan"></div>
+    <label class="lg-lab">DRIVER NAME</label>
+    <input id="lgName" class="lg-in" type="text" placeholder="ENTER NAME" autocomplete="off" maxlength="22">
+    <label class="lg-lab">ACCESS CODE</label>
+    <input id="lgCode" class="lg-in" type="password" placeholder="ANY CODE — DEMO" autocomplete="off" maxlength="12">
+    <button class="lg-btn" id="lgEnter">▸ ENTER WORKBENCH</button>
+    <div class="lg-row"><span id="lgMsg">SYSTEMS NOMINAL · GARAGE LINK ACTIVE</span><a id="lgSkip">skip ›</a></div>
+    <div class="lg-note">Demo access screen for the project presentation — not a security system.</div>
+  </div>
+</div>
 
 <header class="topbar">
   <a href="index.html" title="Back to home" style="display:flex;align-items:center;gap:7px;color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-decoration:none;border:1px solid var(--line2);padding:8px 12px;border-radius:8px;transition:.15s" onmouseover="this.style.color='#fff';this.style.borderColor='var(--amber)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--line2)'">←&nbsp;HOME</a>
@@ -336,6 +385,7 @@
     <div class="ts-item"><div class="k">SYSTEM V</div><div class="val cyan">800 V</div></div>
     <div class="ts-item"><div class="k">PEAK SYS PWR</div><div class="val">680 kW</div></div>
   </div>
+  <div class="driver-tag" id="driverTag" style="display:none"><span class="k">DRIVER</span><span class="v" id="driverName">—</span></div>
   <div class="rec" id="recBadge"><span class="led"></span><span id="recText">TELEMETRY IDLE</span></div>
 </header>
 
@@ -1972,6 +2022,22 @@
     $('refBtn').textContent='✕ CLEAR REFERENCE LAP'; $('refBtn').classList.add('active');
   });
   $('anaClose').addEventListener('click',()=>overlay.classList.remove('show'));
+
+  // ---------- access terminal (cosmetic sign-in) ----------
+  (function(){
+    const gate=$('loginGate'), nameI=$('lgName'), codeI=$('lgCode');
+    try{ const saved=localStorage.getItem('hx01_driver'); if(saved) nameI.value=saved; }catch(e){}
+    function enter(){
+      const nm=((nameI.value||'').trim()||'DRIVER').toUpperCase();
+      try{ localStorage.setItem('hx01_driver', nm); }catch(e){}
+      $('driverName').textContent=nm; $('driverTag').style.display='flex';
+      gate.classList.add('hide'); setTimeout(()=>{gate.style.display='none';},500);
+    }
+    $('lgEnter').addEventListener('click',enter);
+    $('lgSkip').addEventListener('click',enter);
+    [nameI,codeI].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); }));
+    setTimeout(()=>nameI.focus(),50);
+  })();
 
   // ================= boot =================
   resize(); buildSystems(); refreshInspector('overview'); recalcSim(); updateHud();
